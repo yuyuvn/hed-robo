@@ -8,6 +8,13 @@ A simple robo which do simple thing
   * http://wiki.ros.org/ROS/Tutorials/InstallingandConfiguringROSEnvironment
 * Install Turtlebot:
   * http://wiki.ros.org/turtlebot/Tutorials/indigo/Turtlebot%20Installation
+* Install FFMPEG:
+```bash
+sudo add-apt-repository ppa:mc3man/trusty-media
+sudo apt-get update
+sudo apt-get install ffmpeg
+sudo apt-get install v4l-utils
+```
   
 #### Install simulator (if needed)
 ```bash
