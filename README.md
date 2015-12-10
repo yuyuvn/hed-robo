@@ -23,5 +23,6 @@ catkin_make
 ```
 #### Run
 ```
+roslaunch turtlebot_bringup minimal.launch
 ~/turtlebot/devel/lib/hedrobo/hedrobo
 ```
