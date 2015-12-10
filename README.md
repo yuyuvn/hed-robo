@@ -17,7 +17,7 @@ sudo apt-get install ros-indigo-turtlebot-apps ros-indigo-turtlebot-rviz-launche
 ```bash
 cd ~/turtlebot/src
 git clone https://github.com/yuyuvn/hed-robo.git
-cd ..
+cd ~/turtlebot
 source devel/setup.bash
 catkin_make
 ```
