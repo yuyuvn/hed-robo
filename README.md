@@ -28,6 +28,11 @@ cd ~/turtlebot
 source devel/setup.bash
 catkin_make
 ```
+#### Run simulator (optional)
+```bash
+roslaunch turtlebot_gazebo turtlebot_world.launch
+roslaunch turtlebot_rviz_launchers view_robot.launch
+```
 #### Run
 ```bash
 roslaunch turtlebot_bringup minimal.launch
