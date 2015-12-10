@@ -1,0 +1,20 @@
+<package>
+  <name>hedrobo</name>
+  <version>2.2.5</version>
+  <description>Hedspi robot</description>
+  <maintainer email="yuyuvn@mac.com">Clicia Scarlet</maintainer>
+  <license>BSD</license>
+  
+  <author email="my@mail.com"> </author>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <build_depend>roscpp</build_depend>
+  <build_depend>geometry_msgs</build_depend>
+  
+  <run_depend>roscpp</run_depend>
+  <run_depend>geometry_msgs</run_depend>
+  <run_depend>kobuki_safety_controller</run_depend>
+  <run_depend>yocs_velocity_smoother</run_depend>
+  <run_depend>turtlebot_bringup</run_depend>
+</package>
