@@ -15,6 +15,10 @@ sudo apt-get update
 sudo apt-get install ffmpeg
 sudo apt-get install v4l-utils
 ```
+* Install vorbis-tools:
+```bash
+sudo apt-get install vorbis-tools
+```
   
 #### Install simulator (if needed)
 ```bash
