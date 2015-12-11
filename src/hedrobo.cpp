@@ -175,8 +175,21 @@ void boardcastReceive(char* IPAdd)
   strcpy(IP,recvString);
   close(sock);
 }
+void playsound(unsigned int state)
+{
+  if (state & 0x000000FFu) {
+    system("ogg123 voice/square.ogg");
+  } else if (state & 0x0000FF00u) {
+    system("ogg123 voice/triagle.ogg");
+  } else if (state & 0x00FF0000u) {
+    system("ogg123 voice/cycle.ogg");
+  } else if (state & 0xFF000000u) {
+    system("ogg123 voice/x.ogg");
+  }
+}
 void receiveCommand(char* ip, char* port, ros::Publisher cmd_vel_pub_)
 {
+  ros::NodeHandle nh;
   int sockfd, portno, n;
   struct sockaddr_in serv_addr;
   struct hostent *server;
@@ -212,7 +225,7 @@ void receiveCommand(char* ip, char* port, ros::Publisher cmd_vel_pub_)
   }
   
   bzero(buffer,256);
-  strcpy(buffer,"HED-Robo v1.0");
+  strcpy(buffer,"HED-Robo v1.1");
   
   /* Send message to the server */
   n = write(sockfd, buffer, strlen(buffer));
@@ -229,15 +242,19 @@ void receiveCommand(char* ip, char* port, ros::Publisher cmd_vel_pub_)
   base_cmd.linear.x = 0;
   base_cmd.linear.y = 0;
   base_cmd.angular.z = 0;
+  
+  unsigned int state = 0;
+  int pid = 0;
   while(1) {
+    if(!nh.ok()) break;
     /* Now read server response */
     bzero(buffer,256);
-    n = read(sockfd, buffer, 16);
+    n = read(sockfd, buffer, 20);
     
     if (n < 0) {
       ROS_INFO_STREAM("ERROR reading from socket");
       return;
-      } else if (n != 16) {
+    } else if (n != 20) {
       break;
     }
     
@@ -245,9 +262,26 @@ void receiveCommand(char* ip, char* port, ros::Publisher cmd_vel_pub_)
     memcpy(&left_Y, buffer+4, 4);
     memcpy(&right_trigger, buffer+8, 4);
     memcpy(&left_trigger, buffer+12, 4);
+    memcpy(&state, buffer+16, 4);
+    
+    /*char test[256];
+    sprintf(test, "Test: %d", state);
+    ROS_INFO_STREAM(test);*/
     
     base_cmd.linear.x = right_trigger - left_trigger;
-    base_cmd.angular.z = -left_X;
+    base_cmd.angular.z = -3.14*left_X;
+    
+    if (state != 0) {
+      int rv,tpid = 1;
+      if (pid>0) tpid = waitpid(pid, &rv, WNOHANG);
+      if (tpid>0) {
+        pid = fork();        
+        if (pid==0) {
+          playsound(state);
+          _exit(0);
+        }
+      }      
+    }
     
     cmd_vel_pub_.publish(base_cmd);
   }
@@ -281,10 +315,21 @@ void reset_robo(ros::Publisher cmd_vel_pub_)
   cmd_vel_pub_.publish(base_cmd);
 }
 
+void nice_kill(pid_t pid, unsigned int timeout)
+{
+  int status;
+  kill(pid, SIGTERM);
+  sleep(timeout);
+  if (waitpid(pid, &status, WNOHANG)==0) {
+    kill(pid, SIGKILL);
+    waitpid(pid, &status, 0);
+  }
+}
+
 int main(int argc, char** argv)
 {
   //init the ROS node
-  ROS_INFO_STREAM("Hedspi Robo v1.0");
+  ROS_INFO_STREAM("Hedspi Robo v1.1");
   ros::init(argc, argv, "robot_driver");
   ros::NodeHandle nh;
   
@@ -324,7 +369,7 @@ Start:
         goto Connected;
       }
     }
-    kill(pid, SIGTERM);
+    nice_kill(pid, 1);
     goto Clean;
   }
   
@@ -347,7 +392,7 @@ Connected:
     _Exit(0);
   } else {
     receiveCommand(cdata.IP,cdata.capcom_port,cmd_vel_pub_);
-    kill(pid, SIGTERM);
+    nice_kill(pid, 1);
     
     reset_robo(cmd_vel_pub_);
     
