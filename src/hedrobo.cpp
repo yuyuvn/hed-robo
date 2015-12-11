@@ -260,7 +260,8 @@ void sstream(char* ip, char* port)
   //execl("/usr/bin/ffmpeg", "ffmpeg", "-f", "v4l2", "-i", "/dev/video0", "-r", "50", "-vcodec", "mpeg2video", "-b:v", "1000k", "-f", "rtsp", "-rtsp_transport", "tcp", buffer, NULL);
   
   //sprintf(buffer, "ffmpeg -f v4l2 -i "/dev/video0" -r 50 -vcodec mpeg2video -b:v 1000k -f rtsp -rtsp_transport tcp rtsp://%s:%s/live.sdp", ip, port);
-  sprintf(buffer, "ffmpeg -f v4l2 -i \"/dev/video0\" -r 50 -vcodec mpeg2video -b:v 500k -f rtsp -rtsp_transport tcp rtsp://%s:%s/live.sdp", ip, port);
+  //sprintf(buffer, "ffmpeg -f v4l2 -i /dev/video0 -r 50 -vcodec mpeg2video -b:v 500k -f rtsp -rtsp_transport tcp rtsp://%s:%s/live.sdp", ip, port);
+  sprintf(buffer, "nice -10 ffmpeg -f v4l2 -i /dev/video0 -r 50 -vcodec mpeg2video -deinterlace -b:v 8000 -f rtsp -rtsp_transport tcp rtsp://%s:%s/live.sdp", ip, port);
   system(buffer);
 }
 
@@ -304,11 +305,11 @@ Start:
   if(pid<0){
     ROS_INFO_STREAM("Cannot create child process.");
     exit(1);
-    } else if (pid==0) {
+  } else if (pid==0) {
     boardcastReceive(data);
     write(data);
     _Exit(0);
-    } else {
+  } else {
     int c_rvalue, c_exited = 0;
     while(nh.ok()) {
       c_exited = waitpid(pid, &c_rvalue, WNOHANG);
@@ -341,10 +342,10 @@ Connected:
   if(pid<0){
     ROS_INFO_STREAM("Cannot create child process.");
     exit(1);
-    } else if(pid==0){
+  } else if(pid==0){
     sstream(cdata.IP,cdata.stream_port);
     _Exit(0);
-    } else {
+  } else {
     receiveCommand(cdata.IP,cdata.capcom_port,cmd_vel_pub_);
     kill(pid, SIGTERM);
     
