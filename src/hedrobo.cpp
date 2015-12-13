@@ -23,13 +23,18 @@ roslaunch turtlebot_bringup minimal_nomovebase.launch
 #include<pthread.h>
 #include<fcntl.h>
 #include <assert.h>
-#define MAXRECVSTRING 255  /* Longest string to receive */
 #include <iostream>
 #include <ros/ros.h>
 #include <geometry_msgs/Twist.h>
 #include <signal.h>
 #include <fstream>
 #include <sys/wait.h>
+
+#define MAXRECVSTRING 255  /* Longest string to receive */
+#define MARK_VERSION 1
+#define MARK_IP 2
+#define MARK_CAPCOM_PORT 4
+#define MARK_STREAM_PORT 8
 
 ;/* External error handling function */
 void DieWithError(char const *errorMessage) {
@@ -38,27 +43,13 @@ void DieWithError(char const *errorMessage) {
 }
 
 typedef struct{
+  char version[32];
   char IP[16];
   char capcom_port[6];
   char stream_port[6];
+  int mark;
 } ConnectionData;
 
-char** createArray(int m, int n)
-{
-  char* values = (char*)calloc(m*n, sizeof(char));
-  char** rows = (char**)malloc(n*sizeof(char*));
-  int i = 0;
-  for (i = 0; i<n; ++i)
-  {
-    rows[i] = values + i*m;
-  }
-  return rows;
-}
-void destroyArray(char** arr)
-{
-  free(*arr);
-  free(arr);
-}
 char** str_split(char* a_str, const char a_delim)
 {
   char** result = 0;
@@ -106,31 +97,49 @@ char** str_split(char* a_str, const char a_delim)
   
   return result;
 }
-void parse(char args[], char **infor)
+ConnectionData parse(char args[])
 {
+  ConnectionData rdata;
   char data[100];
   strcpy(data, args);
   char** tokens;
   char **token2s;
+  char *mes;
   //char infor[3][20];
   //printf("datas=[%s]\n\n", data);
+  
+  rdata.mark = 0;
   
   tokens = str_split(data, '\n');
   
   if (tokens)
   {
-    int i;
-    int j = 0;
-    for (i = 0; *(tokens + i); i++)
+    mes = strstr(*tokens, "HED-Capcom v");
+    if (mes!=NULL) {
+      strcpy(rdata.version, (char*)(mes+12));
+      rdata.mark |= MARK_VERSION;
+    }
+    
+    for (int i = 0; *(tokens + i); i++)
     {
       token2s = str_split(*(tokens + i), ':');
       if ((*(token2s + 1)) != NULL)
       {
-        strcpy(*(infor + j), *(token2s + 1));
-        j++;
+        if (strcmp(*token2s,"IP")==0) {
+          strcpy(rdata.IP, *(token2s + 1));
+          rdata.mark |= MARK_IP;
+        } else if (strcmp(*token2s,"Capcom")==0) {
+          strcpy(rdata.capcom_port, *(token2s + 1));
+          rdata.mark |= MARK_CAPCOM_PORT;
+        } else if (strcmp(*token2s,"Stream")==0) {
+          strcpy(rdata.stream_port, *(token2s + 1));
+          rdata.mark |= MARK_STREAM_PORT;
+        }
       }
     }
   }
+  
+  return rdata;
 }
 void boardcastReceive(char* IPAdd)
 {
@@ -290,13 +299,13 @@ void sstream(char* ip, char* port)
 {
   char buffer[256];
   
-  //sprintf(buffer, "rtsp://%s:%s/live.sdp", ip, port);
-  //execl("/usr/bin/ffmpeg", "ffmpeg", "-f", "v4l2", "-i", "/dev/video0", "-r", "50", "-vcodec", "mpeg2video", "-b:v", "1000k", "-f", "rtsp", "-rtsp_transport", "tcp", buffer, NULL);
+  sprintf(buffer, "rtsp://%s:%s/live.sdp", ip, port);
+  execl("/usr/bin/ffmpeg", "ffmpeg", "-f", "v4l2", "-i", "/dev/video0", "-r", "50", "-vcodec", "mpeg2video", "-deinterlace", "-b:v", "1000k", "-f", "rtsp", "-rtsp_transport", "tcp", buffer, NULL);
   
   //sprintf(buffer, "ffmpeg -f v4l2 -i "/dev/video0" -r 50 -vcodec mpeg2video -b:v 1000k -f rtsp -rtsp_transport tcp rtsp://%s:%s/live.sdp", ip, port);
   //sprintf(buffer, "ffmpeg -f v4l2 -i /dev/video0 -r 50 -vcodec mpeg2video -b:v 500k -f rtsp -rtsp_transport tcp rtsp://%s:%s/live.sdp", ip, port);
-  sprintf(buffer, "nice -10 ffmpeg -f v4l2 -i /dev/video0 -r 50 -vcodec mpeg2video -deinterlace -b:v 1000k -f rtsp -rtsp_transport tcp rtsp://%s:%s/live.sdp", ip, port);
-  system(buffer);
+  //sprintf(buffer, "nice -10 ffmpeg -f v4l2 -i /dev/video0 -r 50 -vcodec mpeg2video -deinterlace -b:v 1000k -f rtsp -rtsp_transport tcp rtsp://%s:%s/live.sdp", ip, port);
+  //system(buffer);
 }
 
 void write(char* const message)
@@ -319,6 +328,7 @@ void nice_kill(pid_t pid, unsigned int timeout)
 {
   int status;
   kill(pid, SIGTERM);
+  ROS_INFO_STREAM("Killing process...");
   sleep(timeout);
   if (waitpid(pid, &status, WNOHANG)==0) {
     kill(pid, SIGKILL);
@@ -343,7 +353,6 @@ int main(int argc, char** argv)
   
   char data[MAXRECVSTRING+1];
   int pid;
-  char** output = NULL;
   
 Start:
   pid = fork();
@@ -360,7 +369,6 @@ Start:
       c_exited = waitpid(pid, &c_rvalue, WNOHANG);
       
       if (c_exited>0&&c_rvalue==0) {
-        ROS_INFO_STREAM("Capcom connected.");
         std::ifstream t("capcominfo.txt");
         std::stringstream buffer;
         buffer << t.rdbuf();
@@ -374,15 +382,22 @@ Start:
   }
   
 Connected:
-  ConnectionData cdata;
-  output = createArray(20, 3);
+  ConnectionData cdata;  
+  cdata = parse(data);
   
-  parse(data, output);
-  strcpy(cdata.IP, output[0]);
-  strcpy(cdata.capcom_port, output[1]);
-  strcpy(cdata.stream_port, output[2]);
-  destroyArray(output);
+  if ((cdata.mark & (MARK_VERSION | MARK_IP | MARK_CAPCOM_PORT | MARK_STREAM_PORT)) != (MARK_VERSION | MARK_IP | MARK_CAPCOM_PORT | MARK_STREAM_PORT)) {
+    char buffer[256];
+    sprintf(buffer,"Data received:\nVersion: %s\nIP: %s\nCapcom: %s\nStream: %s\nMark: %d",cdata.version,cdata.IP,cdata.capcom_port,cdata.stream_port,cdata.mark);
+    ROS_INFO_STREAM(buffer);
+    goto Start;
+  } else {
+    if (strcmp(cdata.version, "1.1")<0) {
+      ROS_INFO_STREAM("Hed-capcom is too old, please upgrade to new version.");
+      goto Start;
+    }
+  }
   
+  ROS_INFO_STREAM("Capcom connected.");
   pid = fork();
   if(pid<0){
     ROS_INFO_STREAM("Cannot create child process.");
