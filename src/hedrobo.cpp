@@ -14,6 +14,7 @@ roslaunch turtlebot_bringup minimal_nomovebase.launch
 #include <stdlib.h>   /* for atoi() and exit() */
 #include <string.h>   /* for memset() */
 #include <unistd.h>   /* for close() */
+#include <libgen.h>
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <netdb.h>
@@ -23,13 +24,20 @@ roslaunch turtlebot_bringup minimal_nomovebase.launch
 #include<pthread.h>
 #include<fcntl.h>
 #include <assert.h>
-#define MAXRECVSTRING 255  /* Longest string to receive */
 #include <iostream>
 #include <ros/ros.h>
 #include <geometry_msgs/Twist.h>
 #include <signal.h>
 #include <fstream>
 #include <sys/wait.h>
+
+#define MAXRECVSTRING 255  /* Longest string to receive */
+#define MARK_VERSION 1
+#define MARK_IP 2
+#define MARK_CAPCOM_PORT 4
+#define MARK_STREAM_PORT 8
+#define COMMAND_SIGNAL_CONTROLL 1
+#define COMMAND_SIGNAL_NEED_UPGRADE 2
 
 ;/* External error handling function */
 void DieWithError(char const *errorMessage) {
@@ -38,9 +46,11 @@ void DieWithError(char const *errorMessage) {
 }
 
 typedef struct{
+  char version[32];
   char IP[16];
   char capcom_port[6];
   char stream_port[6];
+  int mark;
 } ConnectionData;
 
 char** createArray(int m, int n)
@@ -106,31 +116,49 @@ char** str_split(char* a_str, const char a_delim)
   
   return result;
 }
-void parse(char args[], char **infor)
+ConnectionData parse(char args[])
 {
+  ConnectionData rdata;
   char data[100];
   strcpy(data, args);
   char** tokens;
   char **token2s;
+  char *mes;
   //char infor[3][20];
   //printf("datas=[%s]\n\n", data);
+  
+  rdata.mark = 0;
   
   tokens = str_split(data, '\n');
   
   if (tokens)
   {
-    int i;
-    int j = 0;
-    for (i = 0; *(tokens + i); i++)
+    mes = strstr(*tokens, "HED-Capcom v");
+    if (mes!=NULL) {
+      strcpy(rdata.version, (char*)(mes+12));
+      rdata.mark |= MARK_VERSION;
+    }
+    
+    for (int i = 0; *(tokens + i); i++)
     {
       token2s = str_split(*(tokens + i), ':');
       if ((*(token2s + 1)) != NULL)
       {
-        strcpy(*(infor + j), *(token2s + 1));
-        j++;
+        if (strcmp(*token2s,"IP")==0) {
+          strcpy(rdata.IP, *(token2s + 1));
+          rdata.mark |= MARK_IP;
+        } else if (strcmp(*token2s,"Capcom")==0) {
+          strcpy(rdata.capcom_port, *(token2s + 1));
+          rdata.mark |= MARK_CAPCOM_PORT;
+        } else if (strcmp(*token2s,"Stream")==0) {
+          strcpy(rdata.stream_port, *(token2s + 1));
+          rdata.mark |= MARK_STREAM_PORT;
+        }
       }
     }
   }
+  
+  return rdata;
 }
 void boardcastReceive(char* IPAdd)
 {
@@ -187,7 +215,41 @@ void playsound(unsigned int state)
     system("ogg123 voice/x.ogg");
   }
 }
-void receiveCommand(char* ip, char* port, ros::Publisher cmd_vel_pub_)
+void upgrade()
+{
+  char exe_path[256];
+  char old_path[256];
+  char buffer[256];
+  char *path;
+  
+  getcwd(old_path, sizeof(old_path));
+  ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path)-1);
+  if (len != -1) {
+    exe_path[len] = '\0';
+  } else {
+    return;
+  }
+  strcpy(buffer,exe_path);
+  path = dirname(buffer);
+  if (chdir(path)<0) return;
+  if (chdir("../../../src")<0) goto Restore_path;
+  if (system("git clone https://github.com/yuyuvn/hed-robo.git &")!=0) goto Restore_path;
+  if (chdir("..")<0) goto Restore_path;
+  if (system("catkin_make &")<0) goto Restore_path;
+  
+  int pid;
+  pid = fork();
+  if (pid < 0) {
+    goto Restore_path;
+  } else if (pid == 0) {
+    system(exe_path);
+    _Exit(0);
+  }
+  
+Restore_path:
+  chdir(old_path);
+}
+int receiveCommand(char* ip, char* port, ros::Publisher cmd_vel_pub_)
 {
   ros::NodeHandle nh;
   int sockfd, portno, n;
@@ -203,14 +265,14 @@ void receiveCommand(char* ip, char* port, ros::Publisher cmd_vel_pub_)
   
   if (sockfd < 0) {
     ROS_INFO_STREAM("ERROR opening socket");
-    return;
+    return -1;
   }
   
   server = gethostbyname(ip);
   
   if (server == NULL) {
     ROS_INFO_STREAM("ERROR, no such host");
-    return;
+    return -1;
   }
   
   bzero((char *) &serv_addr, sizeof(serv_addr));
@@ -221,21 +283,22 @@ void receiveCommand(char* ip, char* port, ros::Publisher cmd_vel_pub_)
   /* Now connect to the server */
   if (connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
     ROS_INFO_STREAM("ERROR connecting");
-    return;
+    return -1;
   }
   
   bzero(buffer,256);
-  strcpy(buffer,"HED-Robo v1.1");
+  strcpy(buffer,"HED-Robo v1.3");
   
   /* Send message to the server */
   n = write(sockfd, buffer, strlen(buffer));
   
   if (n < 0) {
     ROS_INFO_STREAM("ERROR writing to socket");
-    return;
+    close(sockfd);
+    return -1;
   }
   
-  float left_X,left_Y, right_trigger, left_trigger;
+  float left_X, right_trigger, left_trigger;
   //init direction that turtlebot should go
   geometry_msgs::Twist base_cmd;
   
@@ -245,24 +308,51 @@ void receiveCommand(char* ip, char* port, ros::Publisher cmd_vel_pub_)
   
   unsigned int state = 0;
   int pid = 0;
+  int bs;
   while(1) {
     if(!nh.ok()) break;
-    /* Now read server response */
+    /* Read server controll signal */
     bzero(buffer,256);
-    n = read(sockfd, buffer, 20);
+    n = read(sockfd, buffer, 1);
     
-    if (n < 0) {
+    if (n <= 0) {
       ROS_INFO_STREAM("ERROR reading from socket");
-      return;
-    } else if (n != 20) {
       break;
     }
     
+    if (buffer[0] == COMMAND_SIGNAL_NEED_UPGRADE) {
+      ROS_INFO_STREAM("Active automaticly upgrade");
+      upgrade();
+      return -1;
+    } else if (buffer[0] == COMMAND_SIGNAL_CONTROLL) {
+      bzero(buffer,256);
+      n = read(sockfd, buffer, 4);
+      if (n != 4) {
+        ROS_INFO_STREAM("ERROR reading from socket");
+        break;
+      }
+      memcpy(&bs, buffer, 4);
+    } else {
+      ROS_INFO_STREAM("ERROR invalid signal found!");
+      break;
+    }
+    
+    if (bs < 1) {
+      ROS_INFO_STREAM("ERROR invalid data");
+      break;
+    }
+    bzero(buffer,256);
+    n = read(sockfd, buffer, bs);
+    if (n != bs) {
+      ROS_INFO_STREAM("ERROR reading from socket");
+      break;
+    }
+    
+    /* Read server data */    
     memcpy(&left_X, buffer, 4);
-    memcpy(&left_Y, buffer+4, 4);
-    memcpy(&right_trigger, buffer+8, 4);
-    memcpy(&left_trigger, buffer+12, 4);
-    memcpy(&state, buffer+16, 4);
+    memcpy(&right_trigger, buffer+4, 4);
+    memcpy(&left_trigger, buffer+8, 4);
+    memcpy(&state, buffer+12, 4);
     
     /*char test[256];
     sprintf(test, "Test: %d", state);
@@ -285,6 +375,8 @@ void receiveCommand(char* ip, char* port, ros::Publisher cmd_vel_pub_)
     
     cmd_vel_pub_.publish(base_cmd);
   }
+  close(sockfd);
+  return 0;
 }
 void sstream(char* ip, char* port)
 {
@@ -319,6 +411,7 @@ void nice_kill(pid_t pid, unsigned int timeout)
 {
   int status;
   kill(pid, SIGTERM);
+  ROS_INFO_STREAM("Killing process...");
   sleep(timeout);
   if (waitpid(pid, &status, WNOHANG)==0) {
     kill(pid, SIGKILL);
@@ -329,7 +422,7 @@ void nice_kill(pid_t pid, unsigned int timeout)
 int main(int argc, char** argv)
 {
   //init the ROS node
-  ROS_INFO_STREAM("Hedspi Robo v1.1");
+  ROS_INFO_STREAM("Hedspi Robo v1.2");
   ros::init(argc, argv, "robot_driver");
   ros::NodeHandle nh;
   
@@ -343,7 +436,6 @@ int main(int argc, char** argv)
   
   char data[MAXRECVSTRING+1];
   int pid;
-  char** output = NULL;
   
 Start:
   pid = fork();
@@ -360,7 +452,6 @@ Start:
       c_exited = waitpid(pid, &c_rvalue, WNOHANG);
       
       if (c_exited>0&&c_rvalue==0) {
-        ROS_INFO_STREAM("Capcom connected.");
         std::ifstream t("capcominfo.txt");
         std::stringstream buffer;
         buffer << t.rdbuf();
@@ -374,15 +465,22 @@ Start:
   }
   
 Connected:
-  ConnectionData cdata;
-  output = createArray(20, 3);
+  ConnectionData cdata;  
+  cdata = parse(data);
   
-  parse(data, output);
-  strcpy(cdata.IP, output[0]);
-  strcpy(cdata.capcom_port, output[1]);
-  strcpy(cdata.stream_port, output[2]);
-  destroyArray(output);
+  if ((cdata.mark & (MARK_VERSION | MARK_IP | MARK_CAPCOM_PORT | MARK_STREAM_PORT)) != (MARK_VERSION | MARK_IP | MARK_CAPCOM_PORT | MARK_STREAM_PORT)) {
+    char buffer[256];
+    sprintf(buffer,"Data received:\nVersion: %s\nIP: %s\nCapcom: %s\nStream: %s\nMark: %d",cdata.version,cdata.IP,cdata.capcom_port,cdata.stream_port,cdata.mark);
+    ROS_INFO_STREAM(buffer);
+    goto Start;
+  } else {
+    if (strcmp(cdata.version, "1.2")<0) {
+      ROS_INFO_STREAM("Hed-capcom is too old, please upgrade to new version.");
+      goto Start;
+    }
+  }
   
+  ROS_INFO_STREAM("Capcom connected.");  
   pid = fork();
   if(pid<0){
     ROS_INFO_STREAM("Cannot create child process.");
@@ -391,12 +489,12 @@ Connected:
     sstream(cdata.IP,cdata.stream_port);
     _Exit(0);
   } else {
-    receiveCommand(cdata.IP,cdata.capcom_port,cmd_vel_pub_);
+    int r = receiveCommand(cdata.IP,cdata.capcom_port,cmd_vel_pub_);
     nice_kill(pid, 1);
     
     reset_robo(cmd_vel_pub_);
     
-    if(nh.ok()) {
+    if(nh.ok()&&r==0) {
       goto Start;
     }
   }
