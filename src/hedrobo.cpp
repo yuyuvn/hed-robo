@@ -38,7 +38,7 @@ roslaunch turtlebot_bringup minimal_nomovebase.launch
 
 ;/* External error handling function */
 void DieWithError(char const *errorMessage) {
-  ROS_INFO_STREAM(errorMessage);
+  ROS_ERROR_STREAM(errorMessage);
   _Exit(3); // change to _Exit(3); if receivebroadcast in child process
 }
 
@@ -59,7 +59,7 @@ char** str_split(char* a_str, const char a_delim)
   char delim[2];
   delim[0] = a_delim;
   delim[1] = 0;
-  
+
   /* Count how many elements will be extracted. */
   while (*tmp)
   {
@@ -70,21 +70,21 @@ char** str_split(char* a_str, const char a_delim)
     }
     tmp++;
   }
-  
+
   /* Add space for trailing token. */
   count += last_comma < (a_str + strlen(a_str) - 1);
-  
+
   /* Add space for terminating null string so caller
   knows where the list of returned strings ends. */
   count++;
-  
+
   result = (char**)malloc(sizeof(char*) * count);
-  
+
   if (result)
   {
     size_t idx = 0;
     char* token = strtok(a_str, delim);
-    
+
     while (token)
     {
       assert(idx < count);
@@ -94,7 +94,7 @@ char** str_split(char* a_str, const char a_delim)
     assert(idx == count - 1);
     *(result + idx) = 0;
   }
-  
+
   return result;
 }
 ConnectionData parse(char args[])
@@ -107,11 +107,11 @@ ConnectionData parse(char args[])
   char *mes;
   //char infor[3][20];
   //printf("datas=[%s]\n\n", data);
-  
+
   rdata.mark = 0;
-  
+
   tokens = str_split(data, '\n');
-  
+
   if (tokens)
   {
     mes = strstr(*tokens, "HED-Capcom v");
@@ -119,7 +119,7 @@ ConnectionData parse(char args[])
       strcpy(rdata.version, (char*)(mes+12));
       rdata.mark |= MARK_VERSION;
     }
-    
+
     for (int i = 0; *(tokens + i); i++)
     {
       token2s = str_split(*(tokens + i), ':');
@@ -138,7 +138,7 @@ ConnectionData parse(char args[])
       }
     }
   }
-  
+
   return rdata;
 }
 void boardcastReceive(char* IPAdd)
@@ -150,35 +150,35 @@ void boardcastReceive(char* IPAdd)
   unsigned short broadcastPort;   /* Port */
   char recvString[MAXRECVSTRING+1]; /* Buffer for received string */
   int recvStringLen;        /* Length of received string */
-  
+
   //if (argc != 2)  /* Test for correct number of arguments */
   //{
     //fprintf(stderr,"Usage: %s <Broadcast Port>\n", argv[0]);
     //exit(1);
   //}
-  
+
   broadcastPort = atoi(argv);   /* First arg: broadcast port */
-  
+
   /* Create a best-effort datagram socket using UDP */
   if ((sock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
   DieWithError("socket() failed");
-  
+
   /* Construct bind structure */
   memset(&broadcastAddr, 0, sizeof(broadcastAddr));   /* Zero out structure */
   broadcastAddr.sin_family = AF_INET;         /* Internet address family */
   broadcastAddr.sin_addr.s_addr = htonl(INADDR_ANY);  /* Any incoming interface */
   broadcastAddr.sin_port = htons(broadcastPort);    /* Broadcast port */
-  
+
   /* Bind to the broadcast port */
   if (bind(sock, (struct sockaddr *) &broadcastAddr, sizeof(broadcastAddr)) < 0)
   DieWithError("bind() failed");
-  
+
   //fcntl(sock,F_SETFL,O_NONBLOCK);
-  
+
   /* Receive a single datagram from the server */
   if ((recvStringLen = recvfrom(sock, recvString, MAXRECVSTRING, 0, NULL, 0)) < 0)
   DieWithError("recvfrom() failed");
-  
+
   recvString[recvStringLen] = '\0';
   //printf("Received: %s\n", recvString);  /* Print the received string */
   strcpy(IP,recvString);
@@ -198,117 +198,126 @@ void playsound(unsigned int state)
 }
 void receiveCommand(char* ip, char* port, ros::Publisher cmd_vel_pub_)
 {
-  ros::NodeHandle nh;
   int sockfd, portno, n;
   struct sockaddr_in serv_addr;
   struct hostent *server;
-  
+  ros::NodeHandle nh;
+
   char buffer[256];
-  
+
   portno = atoi(port);
-  
+
   /* Create a socket point */
   sockfd = socket(AF_INET, SOCK_STREAM, 0);
-  
+
   if (sockfd < 0) {
-    ROS_INFO_STREAM("ERROR opening socket");
+    ROS_ERROR_STREAM("ERROR opening socket");
     return;
   }
-  
+
+  struct timeval timeout;
+  timeout.tv_sec = 10;
+  timeout.tv_usec = 0;
+
+  if (setsockopt (sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)) < 0) {
+    ROS_ERROR_STREAM("setsockopt failed");
+    return;
+  }
+
   server = gethostbyname(ip);
-  
+
   if (server == NULL) {
-    ROS_INFO_STREAM("ERROR, no such host");
+    ROS_ERROR_STREAM("ERROR, no such host");
     return;
   }
-  
+
   bzero((char *) &serv_addr, sizeof(serv_addr));
   serv_addr.sin_family = AF_INET;
   bcopy((char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length);
   serv_addr.sin_port = htons(portno);
-  
+
   /* Now connect to the server */
   if (connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
-    ROS_INFO_STREAM("ERROR connecting");
+    ROS_ERROR_STREAM("ERROR connecting");
     return;
   }
-  
+
   bzero(buffer,256);
   strcpy(buffer,"HED-Robo v1.1");
-  
+
   /* Send message to the server */
   n = write(sockfd, buffer, strlen(buffer));
-  
+
   if (n < 0) {
-    ROS_INFO_STREAM("ERROR writing to socket");
+    ROS_ERROR_STREAM("ERROR writing to socket");
     close(sockfd);
     return;
   }
-  
+
   float left_X,left_Y, right_trigger, left_trigger;
   //init direction that turtlebot should go
   geometry_msgs::Twist base_cmd;
-  
+
   base_cmd.linear.x = 0;
   base_cmd.linear.y = 0;
   base_cmd.angular.z = 0;
-  
+
   unsigned int state = 0;
   int pid = 0;
-  while(1) {
-    if(!nh.ok()) break;
+  while(nh.ok()) {
     /* Now read server response */
     bzero(buffer,256);
     n = read(sockfd, buffer, 20);
-    
+
     if (n < 0) {
-      ROS_INFO_STREAM("ERROR reading from socket");
-      close(sockfd);
-      return;
+      ROS_ERROR_STREAM("ERROR reading from socket");
+      break;
     } else if (n != 20) {
       break;
     }
-    
+
     memcpy(&left_X, buffer, 4);
     memcpy(&left_Y, buffer+4, 4);
     memcpy(&right_trigger, buffer+8, 4);
     memcpy(&left_trigger, buffer+12, 4);
     memcpy(&state, buffer+16, 4);
-    
-    /*char test[256];
-    sprintf(test, "Test: %d", state);
-    ROS_INFO_STREAM(test);*/
-    
+
     base_cmd.linear.x = right_trigger - left_trigger;
     base_cmd.angular.z = -3.14*left_X;
-    
+
     if (state != 0) {
       int rv,tpid = 1;
       if (pid>0) tpid = waitpid(pid, &rv, WNOHANG);
       if (tpid>0) {
-        pid = fork();        
+        pid = fork();
         if (pid==0) {
           playsound(state);
           _exit(0);
         }
-      }      
+      }
     }
-    
+
     cmd_vel_pub_.publish(base_cmd);
+
+    strcpy(buffer,"z");
+    n = write(sockfd, buffer, strlen(buffer));
+
+    if (n < 0) {
+      ROS_ERROR_STREAM("Disconnected");
+      break;
+    }
   }
-  
+
   close(sockfd);
 }
 void sstream(char* ip, char* port)
 {
   char buffer[256];
-  
+
   sprintf(buffer, "rtsp://%s:%s/live.sdp", ip, port);
-  execl("/usr/bin/ffmpeg", "ffmpeg", "-f", "v4l2", "-i", "/dev/video0", "-r", "50", "-vcodec", "mpeg2video", "-deinterlace", "-b:v", "1000k", "-f", "rtsp", "-rtsp_transport", "tcp", buffer, NULL);
-  
-  //sprintf(buffer, "ffmpeg -f v4l2 -i "/dev/video0" -r 50 -vcodec mpeg2video -b:v 1000k -f rtsp -rtsp_transport tcp rtsp://%s:%s/live.sdp", ip, port);
-  //sprintf(buffer, "ffmpeg -f v4l2 -i /dev/video0 -r 50 -vcodec mpeg2video -b:v 500k -f rtsp -rtsp_transport tcp rtsp://%s:%s/live.sdp", ip, port);
-  //sprintf(buffer, "nice -10 ffmpeg -f v4l2 -i /dev/video0 -r 50 -vcodec mpeg2video -deinterlace -b:v 1000k -f rtsp -rtsp_transport tcp rtsp://%s:%s/live.sdp", ip, port);
+  execl("/usr/bin/ffmpeg", "ffmpeg", "-loglevel", "16", "-f", "v4l2", "-i", "/dev/video0", "-r", "50", "-vcodec", "mpeg2video", "-b:v", "1000k", "-f", "rtsp", "-rtsp_transport", "tcp", buffer, NULL);
+
+  //sprintf(buffer, "nice -10 ffmpeg -f v4l2 -i /dev/video0 -r 50 -vcodec mpeg2video -b:v 1000k -f rtsp -rtsp_transport tcp rtsp://%s:%s/live.sdp -loglevel 16", ip, port);
   //system(buffer);
 }
 
@@ -332,7 +341,7 @@ void nice_kill(pid_t pid, unsigned int timeout)
 {
   int status;
   kill(pid, SIGTERM);
-  ROS_INFO_STREAM("Killing process...");
+  ROS_WARN_STREAM("Killing process...");
   sleep(timeout);
   if (waitpid(pid, &status, WNOHANG)==0) {
     kill(pid, SIGKILL);
@@ -346,80 +355,81 @@ int main(int argc, char** argv)
   ROS_INFO_STREAM("Hedspi Robo v1.1");
   ros::init(argc, argv, "robot_driver");
   ros::NodeHandle nh;
-  
+
   //init publisher
   ros::Publisher cmd_vel_pub_;
   cmd_vel_pub_ = nh.advertise<geometry_msgs::Twist>("cmd_vel_mux/input/teleop", 1);
-  
-  
+
   ros::Rate rate(60); // 60fps
-  
-  
+
   char data[MAXRECVSTRING+1];
-  int pid;
-  
+  int pid, pid2, c_rvalue, c_exited;
+
 Start:
+  ROS_INFO_STREAM("Receiving broadcast...");
   pid = fork();
   if(pid<0){
-    ROS_INFO_STREAM("Cannot create child process.");
+    ROS_ERROR_STREAM("Cannot create child process.");
     exit(1);
   } else if (pid==0) {
     boardcastReceive(data);
     write(data);
     _Exit(0);
   } else {
-    int c_rvalue, c_exited = 0;
+    c_exited = 0;
     while(nh.ok()) {
       c_exited = waitpid(pid, &c_rvalue, WNOHANG);
-      
-      if (c_exited>0&&c_rvalue==0) {
-        std::ifstream t("capcominfo.txt");
-        std::stringstream buffer;
-        buffer << t.rdbuf();
-        strcpy(data, buffer.str().c_str());
-        t.close();
-        goto Connected;
+
+      if (c_exited>0) {
+        if (c_rvalue==0) {
+          std::ifstream t("capcominfo.txt");
+          std::stringstream buffer;
+          buffer << t.rdbuf();
+          strcpy(data, buffer.str().c_str());
+          t.close();
+          goto Connected;
+        } else {
+          goto Start;
+        }
       }
     }
     nice_kill(pid, 1);
     goto Clean;
   }
-  
+
 Connected:
-  ConnectionData cdata;  
+  ConnectionData cdata;
   cdata = parse(data);
-  
+
   if ((cdata.mark & (MARK_VERSION | MARK_IP | MARK_CAPCOM_PORT | MARK_STREAM_PORT)) != (MARK_VERSION | MARK_IP | MARK_CAPCOM_PORT | MARK_STREAM_PORT)) {
     char buffer[256];
     sprintf(buffer,"Data received:\nVersion: %s\nIP: %s\nCapcom: %s\nStream: %s\nMark: %d",cdata.version,cdata.IP,cdata.capcom_port,cdata.stream_port,cdata.mark);
-    ROS_INFO_STREAM(buffer);
+    ROS_ERROR_STREAM(buffer);
     goto Start;
   } else {
     if (strcmp(cdata.version, "1.1")<0) {
-      ROS_INFO_STREAM("Hed-capcom is too old, please upgrade to new version.");
+      ROS_ERROR_STREAM("Hed-capcom is too old, please upgrade to new version.");
       goto Start;
     }
   }
-  
+
   ROS_INFO_STREAM("Capcom connected.");
   pid = fork();
   if(pid<0){
-    ROS_INFO_STREAM("Cannot create child process.");
+    ROS_ERROR_STREAM("Cannot create child process.");
     exit(1);
   } else if(pid==0){
     sstream(cdata.IP,cdata.stream_port);
     _Exit(0);
-  } else {
-    receiveCommand(cdata.IP,cdata.capcom_port,cmd_vel_pub_);
-    nice_kill(pid, 1);
-    
-    reset_robo(cmd_vel_pub_);
-    
-    if(nh.ok()) {
-      goto Start;
-    }
   }
-  
+
+  receiveCommand(cdata.IP,cdata.capcom_port,cmd_vel_pub_);
+  reset_robo(cmd_vel_pub_);
+  nice_kill(pid, 1);
+  if(nh.ok()) {
+    goto Start;
+  }
+
 Clean:
   reset_robo(cmd_vel_pub_);
   remove( "capcominfo.txt" );
