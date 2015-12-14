@@ -241,6 +241,7 @@ void receiveCommand(char* ip, char* port, ros::Publisher cmd_vel_pub_)
   
   if (n < 0) {
     ROS_INFO_STREAM("ERROR writing to socket");
+    close(sockfd);
     return;
   }
   
@@ -262,6 +263,7 @@ void receiveCommand(char* ip, char* port, ros::Publisher cmd_vel_pub_)
     
     if (n < 0) {
       ROS_INFO_STREAM("ERROR reading from socket");
+      close(sockfd);
       return;
     } else if (n != 20) {
       break;
@@ -294,6 +296,8 @@ void receiveCommand(char* ip, char* port, ros::Publisher cmd_vel_pub_)
     
     cmd_vel_pub_.publish(base_cmd);
   }
+  
+  close(sockfd);
 }
 void sstream(char* ip, char* port)
 {
