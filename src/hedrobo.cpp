@@ -219,7 +219,7 @@ void receiveCommand(char* ip, char* port, ros::Publisher cmd_vel_pub_)
   }
 
   struct timeval timeout;
-  timeout.tv_sec = 1;
+  timeout.tv_sec = 10;
   timeout.tv_usec = 0;
 
   if (setsockopt (sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)) < 0) {
@@ -276,6 +276,7 @@ void receiveCommand(char* ip, char* port, ros::Publisher cmd_vel_pub_)
       ROS_ERROR_STREAM("ERROR reading from socket");
       break;
     } else if (n != 20) {
+      ROS_ERROR_STREAM("ERROR reading from socket");
       break;
     }
 
@@ -359,7 +360,7 @@ int main(int argc, char** argv)
   ros::Publisher cmd_vel_pub_;
   cmd_vel_pub_ = nh.advertise<geometry_msgs::Twist>("cmd_vel_mux/input/teleop", 1);
 
-  ros::Rate rate(60); // 60fps
+  ros::Rate rate(10);
 
 
 Start:
@@ -389,6 +390,7 @@ Start:
           goto Start;
         }
       }
+      rate.sleep();
     }
     nice_kill(pid, 1);
     goto Clean;
