@@ -36,6 +36,9 @@ roslaunch turtlebot_bringup minimal_nomovebase.launch
 #define MARK_CAPCOM_PORT 4
 #define MARK_STREAM_PORT 8
 
+const char* HEDROBO_VERSION = "1.2";
+const char* CAPCOM_VERSION = "1.2";
+
 ;/* External error handling function */
 void DieWithError(char const *errorMessage) {
   ROS_ERROR_STREAM(errorMessage);
@@ -216,7 +219,7 @@ void receiveCommand(char* ip, char* port, ros::Publisher cmd_vel_pub_)
   }
 
   struct timeval timeout;
-  timeout.tv_sec = 10;
+  timeout.tv_sec = 1;
   timeout.tv_usec = 0;
 
   if (setsockopt (sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)) < 0) {
@@ -243,7 +246,7 @@ void receiveCommand(char* ip, char* port, ros::Publisher cmd_vel_pub_)
   }
 
   bzero(buffer,256);
-  strcpy(buffer,"HED-Robo v1.1");
+  sprintf(buffer,"HED-Robo v%s",HEDROBO_VERSION);
 
   /* Send message to the server */
   n = write(sockfd, buffer, strlen(buffer));
@@ -298,14 +301,6 @@ void receiveCommand(char* ip, char* port, ros::Publisher cmd_vel_pub_)
     }
 
     cmd_vel_pub_.publish(base_cmd);
-
-    strcpy(buffer,"z");
-    n = write(sockfd, buffer, strlen(buffer));
-
-    if (n < 0) {
-      ROS_ERROR_STREAM("Disconnected");
-      break;
-    }
   }
 
   close(sockfd);
@@ -314,10 +309,10 @@ void sstream(char* ip, char* port)
 {
   char buffer[256];
 
-  sprintf(buffer, "rtsp://%s:%s/live.sdp", ip, port);
-  execl("/usr/bin/ffmpeg", "ffmpeg", "-loglevel", "16", "-f", "v4l2", "-i", "/dev/video0", "-r", "50", "-vcodec", "mpeg2video", "-b:v", "1000k", "-f", "rtsp", "-rtsp_transport", "tcp", buffer, NULL);
+  sprintf(buffer, "rtp://%s:%s", ip, port);
+  execl("/usr/bin/ffmpeg", "ffmpeg", "-loglevel", "16", "-f", "v4l2", "-i", "/dev/video0", "-r", "50", "-vcodec", "mpeg2video", "-b:v", "1000k", "-f", "rtp",buffer, NULL);
 
-  //sprintf(buffer, "nice -10 ffmpeg -f v4l2 -i /dev/video0 -r 50 -vcodec mpeg2video -b:v 1000k -f rtsp -rtsp_transport tcp rtsp://%s:%s/live.sdp -loglevel 16", ip, port);
+  //sprintf(buffer, "nice -10 ffmpeg -f v4l2 -i /dev/video0 -r 50 -vcodec mpeg2video -b:v 1000k -f rtp rtp://%s:%s -loglevel 16", ip, port);
   //system(buffer);
 }
 
@@ -351,8 +346,12 @@ void nice_kill(pid_t pid, unsigned int timeout)
 
 int main(int argc, char** argv)
 {
+  char data[MAXRECVSTRING+1];
+  int pid, pid2, c_rvalue, c_exited;
+  
+  sprintf(data, "Hedspi Robo v%s", HEDROBO_VERSION);
   //init the ROS node
-  ROS_INFO_STREAM("Hedspi Robo v1.1");
+  ROS_INFO_STREAM(data);
   ros::init(argc, argv, "robot_driver");
   ros::NodeHandle nh;
 
@@ -362,8 +361,6 @@ int main(int argc, char** argv)
 
   ros::Rate rate(60); // 60fps
 
-  char data[MAXRECVSTRING+1];
-  int pid, pid2, c_rvalue, c_exited;
 
 Start:
   ROS_INFO_STREAM("Receiving broadcast...");
@@ -407,7 +404,7 @@ Connected:
     ROS_ERROR_STREAM(buffer);
     goto Start;
   } else {
-    if (strcmp(cdata.version, "1.1")<0) {
+    if (strcmp(cdata.version, CAPCOM_VERSION)<0) {
       ROS_ERROR_STREAM("Hed-capcom is too old, please upgrade to new version.");
       goto Start;
     }
