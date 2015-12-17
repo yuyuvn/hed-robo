@@ -319,7 +319,7 @@ void sstream(char* ip, char* port)
 
 void write(char* const message)
 {
-  std::ofstream out("capcominfo.txt", std::ofstream::trunc);
+  std::ofstream out("/tmp/capcominfo.txt", std::ofstream::trunc);
   out << message;
   out.close();
 }
@@ -380,7 +380,7 @@ Start:
 
       if (c_exited>0) {
         if (c_rvalue==0) {
-          std::ifstream t("capcominfo.txt");
+          std::ifstream t("/tmp/capcominfo.txt");
           std::stringstream buffer;
           buffer << t.rdbuf();
           strcpy(data, buffer.str().c_str());
@@ -431,7 +431,7 @@ Connected:
 
 Clean:
   reset_robo(cmd_vel_pub_);
-  remove( "capcominfo.txt" );
+  remove("/tmp/capcominfo.txt");
   ROS_INFO_STREAM("Finished");
   return 0;
 }
