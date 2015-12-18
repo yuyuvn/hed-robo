@@ -287,7 +287,7 @@ void receiveCommand(char* ip, char* port, ros::Publisher cmd_vel_pub_)
     memcpy(&state, buffer+16, 4);
 
     base_cmd.linear.x = right_trigger - left_trigger;
-    base_cmd.angular.z = -3.14*left_X;
+    base_cmd.angular.z = -2*left_X;
 
     if (state != 0) {
       int rv,tpid = 1;
@@ -311,9 +311,9 @@ void sstream(char* ip, char* port)
   char buffer[256];
 
   sprintf(buffer, "rtp://%s:%s", ip, port);
-  execl("/usr/bin/ffmpeg", "ffmpeg", "-loglevel", "16", "-f", "v4l2", "-i", "/dev/video0", "-r", "50", "-vcodec", "mpeg2video", "-b:v", "1000k", "-f", "rtp",buffer, NULL);
+  execl("/usr/bin/ffmpeg", "ffmpeg", "-loglevel", "16", "-f", "v4l2", "-i", "/dev/video0", "-r", "50", "-vcodec", "mpeg2video", "-b:v", "100k", "-f", "rtp",buffer, NULL);
 
-  //sprintf(buffer, "nice -10 ffmpeg -f v4l2 -i /dev/video0 -r 50 -vcodec mpeg2video -b:v 1000k -f rtp rtp://%s:%s -loglevel 16", ip, port);
+  //sprintf(buffer, "nice -10 ffmpeg -f v4l2 -i /dev/video0 -r 50 -vcodec mpeg2video -b:v 100k -f rtp rtp://%s:%s -loglevel 16", ip, port);
   //system(buffer);
 }
 
