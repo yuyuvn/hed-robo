@@ -311,7 +311,7 @@ void sstream(char* ip, char* port)
   char buffer[256];
 
   sprintf(buffer, "rtp://%s:%s", ip, port);
-  execl("/usr/bin/ffmpeg", "ffmpeg", "-loglevel", "16", "-f", "v4l2", "-i", "/dev/video0", "-r", "50", "-vcodec", "mpeg2video", "-b:v", "100k", "-f", "rtp",buffer, NULL);
+  execl("/usr/bin/ffmpeg", "ffmpeg", "-loglevel", "16", "-f", "v4l2", "-i", "/dev/video0", "-r", "50", "-vcodec", "mpeg2video", "-b:v", "1000k", "-f", "rtp",buffer, NULL);
 
   //sprintf(buffer, "nice -10 ffmpeg -f v4l2 -i /dev/video0 -r 50 -vcodec mpeg2video -b:v 100k -f rtp rtp://%s:%s -loglevel 16", ip, port);
   //system(buffer);
